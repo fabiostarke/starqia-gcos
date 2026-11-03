@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0b05">
+<title>Formação de Preço e Acompanhamento de Contratos | STARQIA.GCOS</title>
+<meta name="description" content="Monte a planilha de custos e formação de preço de contratos de portaria, vigilância, ronda e limpeza (Simples Nacional ou Lucro Presumido), gere o PDF e acompanhe mês a mês o custo realizado contra o orçado.">
+<link rel="canonical" href="https://gcos.starqia.com/orcamento/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBkMGIwNSIvPjxwYXRoIGQ9Ik0xNiAzLjUgMjcgNy42djcuOWMwIDYuNy00LjYgMTEuMi0xMSAxMy43QzkuNiAyNi43IDUgMjIuMiA1IDE1LjVWNy42TDE2IDMuNVoiIGZpbGw9IiMwMEFBNEYiLz48cGF0aCBkPSJNMTYgNi4yIDI0LjYgOS41djZjMCA1LjMtMy42IDktOC42IDExLjEtNS0yLjEtOC42LTUuOC04LjYtMTEuMXYtNkwxNiA2LjJaIiBmaWxsPSIjMTQxMTBBIi8+PHJlY3QgeD0iMTAuNSIgeT0iMTYuNSIgd2lkdGg9IjIuOCIgaGVpZ2h0PSI1IiByeD0iLjciIGZpbGw9IiMxOUQ0NkIiLz48cmVjdCB4PSIxNC42IiB5PSIxMy4zIiB3aWR0aD0iMi44IiBoZWlnaHQ9IjguMiIgcng9Ii43IiBmaWxsPSIjMTlENDZCIi8+PHJlY3QgeD0iMTguNyIgeT0iMTAuMSIgd2lkdGg9IjIuOCIgaGVpZ2h0PSIxMS40IiByeD0iLjciIGZpbGw9IiMwMEFBNEYiLz48L3N2Zz4K">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>
+/* Mesmo webhook do site principal (index.html → GCOS_CONFIG). Recebe os leads das simulações. */
+window.GCOS_CONFIG = { leadWebhookUrl: "https://script.google.com/macros/s/AKfycbxXcBZo9Y5EctML_EzvYaxmWSops5N1Z8LeBGMUQ2c6YplApN2BYrNyd-wkg7rf4k5K/exec" };
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="https://gcos.starqia.com/" aria-label="STARQIA.GCOS — página inicial">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 28 7v8.6c0 7.3-5 12.2-12 14.9C9 27.8 4 22.9 4 15.6V7L16 2.5Z" fill="#00AA4F"/><path d="M16 5.4 25.4 9v6.6c0 5.8-3.9 9.8-9.4 12.1-5.5-2.3-9.4-6.3-9.4-12.1V9L16 5.4Z" fill="#14110A"/><rect x="10" y="17" width="3" height="5.5" rx=".8" fill="#19D46B"/><rect x="14.5" y="13.5" width="3" height="9" rx=".8" fill="#19D46B"/><rect x="19" y="10" width="3" height="12.5" rx=".8" fill="#00AA4F"/></svg>
+      <span>STARQIA</span><b>.GCOS</b>
+    </a>
+    <nav class="tabs" role="tablist" aria-label="Seções">
+      <button role="tab" data-tab="preco" aria-selected="true">Formação de preço</button>
+      <button role="tab" data-tab="acomp" aria-selected="false">Acompanhamento mensal</button>
+      <button role="tab" data-tab="contratos" aria-selected="false">Contratos</button>
+    </nav>
+    <a class="back" href="https://gcos.starqia.com/">← Voltar ao site</a>
+  </div>
+</header>
+
+<main id="app">
+  <!-- ═══════════ FORMAÇÃO DE PREÇO ═══════════ -->
+  <section id="tab-preco" class="tab-panel" role="tabpanel">
+    <div class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Planilha de custos e formação de preço</p>
+        <h1>Quanto custa, de verdade, o seu contrato de terceirização?</h1>
+        <p class="lead">Monte o preço posto a posto, módulo a módulo: remuneração, benefícios, insumos, encargos, custos indiretos, lucro e tributos do Simples Nacional ou do Lucro Presumido. No final, baixe a proposta em PDF.</p>
+        <div class="hero-actions">
+          <button class="btn ghost" data-act="modelo" data-modelo="portaria">Modelo portaria / ronda</button>
+          <button class="btn ghost" data-act="modelo" data-modelo="limpeza">Modelo limpeza</button>
+          <button class="btn ghost" data-act="zerar">Começar do zero</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap grid-preco">
+      <form id="form-preco" class="form" autocomplete="off" novalidate></form>
+      <aside class="resumo" id="resumo" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ═══════════ ACOMPANHAMENTO MENSAL ═══════════ -->
+  <section id="tab-acomp" class="tab-panel" role="tabpanel" hidden>
+    <div class="hero slim"><div class="wrap">
+      <p class="eyebrow">Orçado x realizado</p>
+      <h1>O contrato está cabendo no orçamento?</h1>
+      <p class="lead">Lance os custos realizados de cada competência. O sistema compara com o orçamento vigente e mostra a variação de cada custo em relação ao mês anterior.</p>
+    </div></div>
+    <div class="wrap" id="acomp"></div>
+  </section>
+
+  <!-- ═══════════ CONTRATOS ═══════════ -->
+  <section id="tab-contratos" class="tab-panel" role="tabpanel" hidden>
+    <div class="hero slim"><div class="wrap">
+      <p class="eyebrow">Carteira</p>
+      <h1>Contratos salvos</h1>
+      <p class="lead">Os contratos ficam gravados neste navegador. Exporte um backup sempre que lançar um mês e importe em outro computador quando precisar.</p>
+    </div></div>
+    <div class="wrap" id="contratos"></div>
+  </section>
+</main>
+
+<footer class="rodape">
+  <div class="wrap">
+    <p>Simulação gerencial. Os percentuais legais e convencionais devem ser conferidos com a convenção coletiva da categoria e com a contabilidade da empresa antes da assinatura do contrato.</p>
+    <p>STARQIA SOLUÇÕES CONTÁBEIS LTDA. · CNPJ 29.552.188/0001-62 · CRC 2SP 040.629/O-7 · <a href="https://gcos.starqia.com/#/politica-de-privacidade">Política de privacidade</a></p>
+  </div>
+</footer>
+
+<!-- Modal de identificação antes do PDF -->
+<dialog id="dlg-lead" class="dlg">
+  <form method="dialog" id="form-lead" novalidate>
+    <h2>Baixar proposta em PDF</h2>
+    <p class="muted">Informe seus dados para gerar o PDF. Uma cópia da simulação fica registrada com a equipe STARQIA.GCOS, que pode entrar em contato para revisar os números com você.</p>
+    <label>Nome<input name="name" required maxlength="120"></label>
+    <label>Empresa<input name="company" maxlength="160"></label>
+    <label>E-mail<input name="email" type="email" required maxlength="160"></label>
+    <label>WhatsApp<input name="whatsapp" inputmode="tel" required maxlength="20" placeholder="(11) 99999-9999"></label>
+    <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <label class="check"><input type="checkbox" name="consent" required> Concordo com o tratamento dos meus dados para contato, conforme a política de privacidade.</label>
+    <p class="erro" id="lead-erro" role="alert"></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost-dark" value="cancel" data-act="fechar-lead">Cancelar</button>
+      <button type="submit" class="btn primary" value="ok">Gerar PDF</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="engine.js"></script>
+<script src="pdf.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
