@@ -58,6 +58,9 @@ function criarEmpresa(nome, pastaPaiId) {
 // W&F: pasta dentro de "W&F grupo wctech - 298"
 function criarEmpresa_WF() { return criarEmpresa('W&F', '1L8G-oTJi1O7IBuQBtQ9Sf5OHn2CyIygE'); }
 
+// WISDOM Segurança: pasta dentro de "WISDOM SEGURANÇA LTDA - 224"
+function criarEmpresa_WISDOM() { return criarEmpresa('WISDOM Segurança', '1XAHBTKvQMhhBak21sBQhI-Gdh2FisPVk'); }
+
 // ───────────────────────── web app ─────────────────────────
 
 function doGet() { return json_({ ok: true, servico: 'STARQIA Orçamentos' }); }
