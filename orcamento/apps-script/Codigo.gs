@@ -43,9 +43,11 @@ function setup() {
   return { raizId, cfgId };
 }
 
-function criarEmpresa(nome) {
+/** pastaPaiId (opcional): cria a pasta da empresa dentro de uma pasta existente (ex.: a pasta do cliente) */
+function criarEmpresa(nome, pastaPaiId) {
   const ids = setup();
-  const pasta = DriveApp.getFolderById(ids.raizId).createFolder(nome);
+  const pai = DriveApp.getFolderById(pastaPaiId || ids.raizId);
+  const pasta = pai.createFolder(pastaPaiId ? 'STARQIA Orçamentos – ' + nome : nome);
   const chave = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 32);
   const link = SITE + '?k=' + chave;
   SpreadsheetApp.openById(ids.cfgId).getSheetByName('Empresas').appendRow([nome, chave, link, pasta.getUrl(), true, new Date()]);
@@ -53,7 +55,8 @@ function criarEmpresa(nome) {
   return link;
 }
 
-function criarEmpresa_WF() { return criarEmpresa('W&F'); }
+// W&F: pasta dentro de "W&F grupo wctech - 298"
+function criarEmpresa_WF() { return criarEmpresa('W&F', '1L8G-oTJi1O7IBuQBtQ9Sf5OHn2CyIygE'); }
 
 // ───────────────────────── web app ─────────────────────────
 
