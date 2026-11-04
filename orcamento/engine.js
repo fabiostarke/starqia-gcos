@@ -105,6 +105,8 @@
         sindicatoPatronalAnual: 0,  // R$/ano rateado por 12
         outrosMensal: 0,            // R$/mês
         lucroPct: 0.10,             // sobre (subtotal + custos indiretos)
+        lucroModo: 'pct',           // 'pct' = informa a margem e calcula a fatura; 'fatura' = informa a fatura atual e calcula a margem
+        faturaAtual: 0,             // R$/mês cobrado hoje do cliente (modo 'fatura')
       },
 
       retencoes: { inssPct: 0.11, issPct: 0, irPct: 0, csrfPct: 0 },
@@ -228,7 +230,7 @@
     const sind = n(ind.sindicatoPatronalAnual) / 12;
     const outrosInd = n(ind.outrosMensal);
     const indiretos = ci + adm + seg + sind + outrosInd;
-    const lucro = (subtotal + ci) * n(ind.lucroPct);
+    const modoFatura = ind.lucroModo === 'fatura' && n(ind.faturaAtual) > 0;
 
     // Tributos "por dentro": incidem sobre o faturamento (Nota 2 da planilha)
     const trib = [];
@@ -247,8 +249,16 @@
     if (n(inp.outrosTributosPct)) trib.push({ cod: 'OUT', desc: 'Outros tributos sobre faturamento', pct: n(inp.outrosTributosPct) });
     const pctTributos = trib.reduce((a, t) => a + t.pct, 0);
 
-    const antesTributos = subtotal + indiretos + lucro;
-    const fatura = pctTributos < 1 ? antesTributos / (1 - pctTributos) : 0;
+    let lucro, fatura;
+    if (modoFatura) {
+      // Fatura informada: os tributos incidem sobre ela e o lucro é o que sobra
+      fatura = n(ind.faturaAtual);
+      lucro = fatura * (1 - pctTributos) - subtotal - indiretos;
+    } else {
+      lucro = (subtotal + ci) * n(ind.lucroPct);
+      fatura = pctTributos < 1 ? (subtotal + indiretos + lucro) / (1 - pctTributos) : 0;
+    }
+    const lucroPct = (subtotal + ci) ? lucro / (subtotal + ci) : 0;
     trib.forEach(t => { t.valor = fatura * t.pct; });
     const tributos = trib.reduce((a, t) => a + t.valor, 0);
 
@@ -257,7 +267,7 @@
     if (seg) push(5, 'A.2', `Seguros (${pct(ind.seguroPct)})`, seg);
     if (sind) push(5, 'A.3', 'Contribuição sindical patronal (anual ÷ 12)', sind);
     if (outrosInd) push(5, 'A.4', 'Outros custos indiretos', outrosInd);
-    push(5, 'B', `Lucro (${pct(ind.lucroPct)})`, lucro);
+    push(5, 'B', modoFatura ? `${lucro < 0 ? 'Prejuízo' : 'Lucro'} resultante da fatura atual (${pct(lucroPct)})` : `Lucro (${pct(ind.lucroPct)})`, lucro);
     trib.forEach(t => push(5, t.cod, `${t.desc} – ${pct(t.pct)}`, t.valor, { pct: t.pct, tributo: true }));
     const m5 = indiretos + lucro + tributos;
 
@@ -284,6 +294,8 @@
       retencoes: retList, totalRetencoes,
       faturaLiquida: fatura - totalRetencoes,
       margemPct: fatura ? lucro / fatura : 0,
+      lucroPct, lucroModo: modoFatura ? 'fatura' : 'pct',
+      pctIndiretos: subtotal ? indiretos / subtotal : 0,
       // Grupos usados no acompanhamento mensal (orçado x realizado)
       grupos: {
         remuneracao: m1, beneficios: m2, insumos: m3, encargos: m4,
@@ -294,13 +306,36 @@
 
   // Grupos do acompanhamento: chave, rótulo, se é custo (true) ou receita/resultado
   const GRUPOS = [
-    { k: 'remuneracao', label: 'Remuneração (folha)', custo: true, dica: 'Salários, adicionais, horas extras e FT da folha do mês' },
-    { k: 'beneficios', label: 'Benefícios', custo: true, dica: 'VT, VA, cesta, seguro, plano etc., líquidos dos descontos' },
-    { k: 'insumos', label: 'Insumos', custo: true, dica: 'Uniformes, EPI, materiais, exames, equipamentos' },
-    { k: 'encargos', label: 'Encargos e provisões', custo: true, dica: 'INSS/FGTS pagos + provisões de 13º, férias e rescisão do mês' },
-    { k: 'indiretos', label: 'Custos indiretos', custo: true, dica: 'Supervisão, administrativo, seguros, sindicato' },
-    { k: 'tributos', label: 'Tributos sobre faturamento', custo: true, dica: 'DAS ou PIS/COFINS/IRPJ/CSLL/ISS do contrato' },
+    { k: 'remuneracao', label: 'Remuneração', custo: true, dica: 'Valor bruto da folha do contrato: salários, adicionais (noturno, periculosidade, insalubridade), horas extras, FT e gratificações, antes dos descontos.' },
+    { k: 'beneficios', label: 'Benefícios', custo: true, dica: 'Valores pagos, líquidos dos descontos do funcionário: VT (menos os 6%), vale-alimentação, cesta básica, seguro de vida, plano de saúde e assistência odontológica.' },
+    { k: 'insumos', label: 'Insumos', custo: true, dica: 'Uniformes, EPI, materiais e equipamentos, exames ocupacionais e laudos.' },
+    { k: 'encargos', label: 'Encargos e provisões', custo: true, dica: 'Calculado sobre a remuneração informada, com o percentual do Módulo 4 do orçamento (FGTS, INSS patronal quando houver, provisões de 13º, férias e rescisão). Pode ser substituído pelo valor real.' },
+    { k: 'indiretos', label: 'Custos indiretos', custo: true, dica: 'Supervisão, administrativo, deslocamento, seguros, contribuição sindical patronal. Informe em R$ ou como % sobre os custos diretos do mês.' },
+    { k: 'tributos', label: 'Tributos sobre o faturamento', custo: true, dica: 'Informe a alíquota atual da empresa: o sistema calcula o imposto sobre o faturamento do mês. Ou informe o valor da guia.' },
   ];
+
+  /**
+   * Monta os valores realizados do mês a partir do que foi digitado.
+   * entrada: { remuneracao, beneficios, insumos, encargos, indiretos, tributos, faturamento } (R$ ou vazio)
+   * cfg: { encargos:'auto'|'valor', indiretos:'pct'|'valor', indiretosPct, tributos:'pct'|'valor', tributosPct }
+   * orc: resultado de calcular() da versão vigente (percentuais padrão).
+   */
+  function resolverRealizado(entrada, cfg, orc) {
+    const tem = v => v !== '' && v !== null && v !== undefined && isFinite(parseFloat(v));
+    const r = {};
+    ['remuneracao', 'beneficios', 'insumos', 'faturamento'].forEach(k => { if (tem(entrada[k])) r[k] = r2(n(entrada[k])); });
+    cfg = cfg || {};
+    if (cfg.encargos === 'auto') { if (tem(r.remuneracao)) r.encargos = r2(r.remuneracao * orc.pctEncargos); }
+    else if (tem(entrada.encargos)) r.encargos = r2(n(entrada.encargos));
+    if (cfg.indiretos === 'pct') {
+      const base = ['remuneracao', 'beneficios', 'insumos', 'encargos'].filter(k => tem(r[k]));
+      if (base.length) r.indiretos = r2(base.reduce((a, k) => a + r[k], 0) * n(cfg.indiretosPct != null ? cfg.indiretosPct : orc.pctIndiretos));
+    } else if (tem(entrada.indiretos)) r.indiretos = r2(n(entrada.indiretos));
+    if (cfg.tributos === 'pct') { if (tem(r.faturamento)) r.tributos = r2(r.faturamento * n(cfg.tributosPct != null ? cfg.tributosPct : orc.pctTributos)); }
+    else if (tem(entrada.tributos)) r.tributos = r2(n(entrada.tributos));
+    return r;
+  }
+  const CFG_PADRAO = orc => ({ encargos: 'auto', indiretos: 'pct', indiretosPct: r2(orc.pctIndiretos * 1e6) / 1e6, tributos: 'pct', tributosPct: r2(orc.pctTributos * 1e6) / 1e6 });
 
   /** Compara o orçado (resultado do cálculo) com os valores realizados do mês */
   function compararMes(orcado, real, tolerancia) {
@@ -361,6 +396,8 @@
         custoTotal: delta(custoTotal, ant ? ant.custoTotal.valor : null),
         custoPorFuncionario: delta(custoTotal !== null && hc ? custoTotal / hc : null, ant ? ant.custoPorFuncionario.valor : null),
         faturamento: delta(fat, ant ? ant.faturamento.valor : null),
+        resultado: delta(fat !== null && custoTotal !== null ? fat - custoTotal : null, ant ? ant.resultado.valor : null),
+        margem: delta(fat && custoTotal !== null ? (fat - custoTotal) / fat : null, ant ? ant.margem.valor : null),
         headcount: hc,
       };
       ant = linha;
@@ -368,7 +405,7 @@
     });
     function delta(v, a) {
       const d = v !== null && a !== null ? v - a : null;
-      return { valor: v, anterior: a, delta: d, deltaPct: d !== null && a ? d / a : null };
+      return { valor: v, anterior: a, delta: d, deltaPct: d !== null && a ? d / Math.abs(a) : null };
     }
   }
 
@@ -383,7 +420,7 @@
   function fmt(v) { return (n(v)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
   function pct(v, d) { return (n(v) * 100).toLocaleString('pt-BR', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }) + '%'; }
 
-  const API = { calcular, compararMes, variacaoMesAMes, modeloPadrao, aliquotaEfetivaSimples, adicionalNoturno,
+  const API = { calcular, compararMes, variacaoMesAMes, resolverRealizado, CFG_PADRAO, modeloPadrao, aliquotaEfetivaSimples, adicionalNoturno,
     PRESETS_41, PRESET_PRESUMIDO_TRIB, SIMPLES, GRUPOS, fmt, pct, r2 };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.StarqiaEngine = API;

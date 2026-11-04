@@ -121,7 +121,7 @@
       ['D', 'Módulo 4 · Encargos', fmt(r.modulos.m4), pct(r.modulos.m4 / F, 1)],
       [{ content: 'Subtotal (A + B + C + D)', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: fmt(r.subtotal), styles: { fontStyle: 'bold', halign: 'right' } }, pct(r.subtotal / F, 1)],
       ['E', 'Custos indiretos', fmt(r.indiretos), pct(r.indiretos / F, 1)],
-      ['F', 'Lucro', fmt(r.lucro), pct(r.lucro / F, 1)],
+      ['F', r.lucro < 0 ? 'Prejuízo' : 'Lucro', fmt(r.lucro), pct(r.lucro / F, 1)],
       ['G', 'Tributos sobre o faturamento', fmt(r.tributos), pct(r.tributos / F, 1)],
       [{ content: 'Valor mensal da fatura', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [230, 247, 238] } }, { content: fmt(r.fatura), styles: { fontStyle: 'bold', halign: 'right', fillColor: [230, 247, 238] } }, { content: '100%', styles: { fillColor: [230, 247, 238], halign: 'right' } }],
     ];
@@ -136,7 +136,7 @@
       `Encargos sociais e trabalhistas de ${pct(r.pctEncargos)} sobre a remuneração (FGTS, provisões de 13º, férias, rescisão e reposição de ausências${r.encargos['4.1'].pct > 0.09 ? ', INSS patronal e RAT' : ''}).`,
       `Tributos de ${pct(r.pctTributos)} calculados sobre o valor da fatura (${regime}).`,
       `Vale-transporte: ${fmt(b.vtTarifa)} × ${b.vtViagensDia} conduções × ${b.vtDias} dias, com desconto de ${pct(b.vtDescontoPct, 0)} do salário. Alimentação: ${fmt(b.vaValorDia)} × ${b.vaDias} dias.`,
-      `Custos indiretos de ${pct(inp.indiretos.custosIndiretosPct)} e lucro de ${pct(inp.indiretos.lucroPct)}.`,
+      `Custos indiretos de ${pct(inp.indiretos.custosIndiretosPct)} e lucro de ${pct(r.lucroPct)} sobre subtotal + custos indiretos${r.lucroModo === 'fatura' ? ', calculado a partir do valor de fatura informado' : ''}.`,
       'Valores sujeitos a reajuste na data-base da convenção coletiva da categoria.',
     ];
     if (m.observacoes) prem.push(m.observacoes);
@@ -174,13 +174,19 @@
       { columnStyles: { 1: dir, 2: dir, 3: dir, 4: dir, 5: dir, 6: dir, 7: dir },
         didParseCell: d => { if (d.section === 'body' && d.column.index === 8) { const s = D.comps[d.row.index].cmp.status; d.cell.styles.textColor = s === 'estouro' ? [214, 59, 59] : s === 'atencao' ? [201, 138, 0] : s === 'ok' ? [15, 155, 79] : STEEL; d.cell.styles.fontStyle = 'bold'; } } });
 
-    y = titulo(doc, y, 'Variação mês a mês dos custos realizados');
+    y = titulo(doc, y, 'Variação mês a mês: custos e resultado do contrato');
     const V = D.varia;
-    const linhas = E.GRUPOS.map(g => [g.label, x => x.grupos[g.k], true]).concat([['Custo total', x => x.custoTotal, true], ['Custo por funcionário', x => x.custoPorFuncionario, true], ['Faturamento', x => x.faturamento, false]]);
+    const linhas = E.GRUPOS.map(g => [g.label, x => x.grupos[g.k], true]).concat([['Custo total', x => x.custoTotal, true], ['Custo por funcionário', x => x.custoPorFuncionario, true], ['Faturamento', x => x.faturamento, false], ['Resultado (lucro/prejuízo)', x => x.resultado, 'res'], ['Margem do resultado', x => x.margem, 'marg']]);
     const cor = [];
     const body = linhas.map((l, ri) => [l[0]].concat(V.map((x, ci) => {
       const d = l[1](x);
       if (!d || d.valor === null) return '-';
+      if (l[2] === 'res' || l[2] === 'marg') {
+        cor.push([ri, ci + 1, d.valor < 0 ? [214, 59, 59] : [15, 155, 79]]);
+        const v = l[2] === 'res' ? fmt(d.valor) : pct(d.valor, 1);
+        if (d.delta === null) return v;
+        return l[2] === 'res' ? `${v}\n${d.delta > 0 ? '+' : ''}${fmt(d.delta)}` : `${v}\n${d.delta > 0 ? '+' : ''}${(d.delta * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.`;
+      }
       if (d.deltaPct === null) return fmt(d.valor);
       const subiu = l[2] ? d.deltaPct > c.tolerancia : -d.deltaPct > c.tolerancia;
       const caiu = l[2] ? d.deltaPct < -c.tolerancia : -d.deltaPct < -c.tolerancia;
