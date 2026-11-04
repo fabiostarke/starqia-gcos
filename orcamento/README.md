@@ -23,7 +23,16 @@ Ferramenta estática (HTML + JS, sem servidor) publicada pelo GitHub Pages junto
 
 ## Onde ficam os dados
 
-Os contratos e lançamentos ficam no `localStorage` do navegador de quem usa, e não são enviados a nenhum servidor. Para trocar de computador, use **Exportar backup** e **Importar backup** na aba Contratos.
+**Sem link de acesso:** os contratos ficam só no `localStorage` do navegador de quem usa. Para trocar de computador, use **Exportar backup** e **Importar backup** na aba Contratos.
+
+**Com link de acesso (`/orcamento/?k=<chave>`):** os contratos da empresa ficam no Google Drive do dono do Apps Script *STARQIA Orçamentos – Armazenamento* (código em `apps-script/Codigo.gs`, URL em `GCOS_CONFIG.orcamentoApiUrl`).
+
+- Cada alteração é enviada ao Drive cerca de 1 s depois; a barra no topo mostra o estado. Sem internet, os dados ficam no navegador e são enviados quando a conexão volta.
+- O Apps Script junta os dados contrato a contrato (vale o mais recente) e registra exclusões, então dois computadores podem usar a mesma empresa.
+- Na pasta da empresa: `dados.json`, a planilha *Acompanhamento – Empresa* (abas Lançamentos e Contratos), `PDFs/` e `Backups/` (uma cópia por dia).
+- Empresas e chaves: planilha *STARQIA Orçamentos – Empresas e chaves*, na pasta *STARQIA Orçamentos* do Drive. Para bloquear uma empresa, mude **Ativo** para FALSE.
+- Nova empresa: no editor do Apps Script, crie uma função como `criarEmpresa_WF` (nome e, se quiser, o ID da pasta do cliente onde criar a pasta), rode e copie o link do registro de execução ou da planilha de empresas.
+- Ao alterar `Codigo.gs`, publique em **Implantar > Gerenciar implantações > editar > Nova versão**, para manter a mesma URL.
 
 ## Leads e cópia das simulações
 
