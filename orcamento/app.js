@@ -52,7 +52,151 @@
   let res = E.calcular(inp);
   let edicao = store.get(K.edicao, null); // {contratoId} quando editando nova versão de um contrato
   let contratos = store.get(K.contratos, []);
-  const salvarContratos = () => store.set(K.contratos, contratos);
+  function salvarContratos() { carimbar(); store.set(K.contratos, contratos); agendarNuvem(); }
+
+  // ═════════════════════════ NUVEM (Google Drive via Apps Script) ═════════════════════════
+  // Com um link de acesso (?k=chave), os contratos ficam guardados na pasta da empresa no Drive.
+  // O navegador continua com uma cópia local; cada alteração é enviada ao Drive em seguida.
+  const KN = { chave: 'starqia.orc.chave.v1', dono: 'starqia.orc.dono.v1', pend: 'starqia.orc.pendente.v1', exc: 'starqia.orc.excluidos.v1', guardados: 'starqia.orc.contratos.locais.v1' };
+  const nuvem = { chave: null, empresa: null, estado: 'off', hora: null, timer: null, emVoo: false, denovo: false, pronto: false, assin: {} };
+  const apiUrl = () => window.GCOS_CONFIG && window.GCOS_CONFIG.orcamentoApiUrl;
+  const nuvemAtiva = () => !!(nuvem.chave && apiUrl() && nuvem.pronto);
+  (function lerChave() {
+    try {
+      const u = new URL(location.href); const k = u.searchParams.get('k');
+      if (k && /^[a-f0-9]{24,64}$/i.test(k)) { store.set(KN.chave, k); u.searchParams.delete('k'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
+    } catch (e) { /* ignora */ }
+    nuvem.chave = store.get(KN.chave, null);
+  })();
+  const semCarimbo = c => { const x = Object.assign({}, c); delete x.atualizadoEm; return JSON.stringify(x); };
+  function assinar() { nuvem.assin = {}; contratos.forEach(c => { nuvem.assin[c.id] = semCarimbo(c); }); }
+  // Marca com data/hora os contratos que mudaram desde a última sincronização
+  function carimbar() {
+    const agora = new Date().toISOString();
+    contratos.forEach(c => { if (nuvem.assin[c.id] !== semCarimbo(c)) { c.atualizadoEm = agora; nuvem.assin[c.id] = semCarimbo(c); } });
+  }
+  function registrarExclusao(id) { const x = store.get(KN.exc, {}); x[id] = new Date().toISOString(); store.set(KN.exc, x); }
+  async function api(corpo) {
+    const r = await fetch(apiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(Object.assign({ chave: nuvem.chave }, corpo)) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+  function estadoNuvem(e) {
+    nuvem.estado = e; if (e === 'ok') nuvem.hora = new Date();
+    const el = $('#nuvem'); if (!el) return;
+    if (!nuvem.chave || !apiUrl()) { el.hidden = true; return; }
+    const hh = nuvem.hora ? nuvem.hora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const txt = { carregando: 'Conectando ao Google Drive…', salvando: 'Salvando no Google Drive…', pend: 'Alterações ainda não enviadas ao Drive', ok: `Tudo salvo no Google Drive${hh ? ' às ' + hh : ''}`, erro: 'Sem conexão com o Drive. Os dados estão neste navegador e serão enviados assim que a conexão voltar.', chave: 'Link de acesso inválido ou desativado. Os dados ficam só neste navegador.' }[e] || '';
+    el.hidden = false; el.className = 'nuvem-bar ' + e;
+    el.innerHTML = `<div class="wrap"><span class="dot"></span><span>${nuvem.empresa ? `<b>${esc(nuvem.empresa)}</b> · ` : ''}${txt}</span>${e === 'erro' ? '<button type="button" data-n="tentar">Tentar agora</button>' : ''}<button type="button" data-n="sair">Desconectar este navegador</button></div>`;
+  }
+  function agendarNuvem() {
+    if (!nuvemAtiva()) return;
+    store.set(KN.pend, true); estadoNuvem('pend');
+    clearTimeout(nuvem.timer); nuvem.timer = setTimeout(enviarNuvem, 1200);
+  }
+  // Monta a planilha legível que o Apps Script grava no Drive
+  function planilhaNuvem() {
+    const lanc = [], resumo = [];
+    contratos.forEach(c => {
+      let D; try { D = dadosContrato(c); } catch (e) { return; }
+      D.comps.forEach(x => {
+        const r = x.reg.real || {}, k = x.cmp, v = D.varia.find(z => z.mes === x.mes);
+        const custo = v && v.custoTotal.valor;
+        lanc.push([c.nome, c.cliente || '', x.mes, r.faturamento, r.remuneracao, r.beneficios, r.insumos, r.encargos, r.indiretos, r.tributos, custo, k.custoOrc,
+          k.desvioCustoPct, v && v.resultado.valor, v && v.margem.valor, { ok: 'Dentro', atencao: 'Na tolerância', estouro: 'Acima', pendente: 'Pendente' }[k.status], x.reg.headcount, x.reg.obs || '']);
+      });
+      const ult = c.versoes[c.versoes.length - 1]; const ro = E.calcular(ult.inp);
+      resumo.push([c.nome, c.cliente || '', c.versoes.length, ro.fatura, ro.headcount, D.meses.length, D.meses.length ? D.meses[D.meses.length - 1] : '', D.acum.real, D.acum.orc, D.acum.fat ? D.acum.res : '', D.acum.fat ? D.acum.res / D.acum.fat : '']);
+    });
+    return { abas: [
+      { nome: 'Lançamentos', cabecalho: ['Contrato', 'Cliente', 'Competência', 'Faturamento', 'Remuneração', 'Benefícios', 'Insumos', 'Encargos', 'Custos indiretos', 'Tributos', 'Custo realizado', 'Custo orçado', 'Desvio do custo', 'Resultado (lucro/prejuízo)', 'Margem', 'Situação', 'Funcionários', 'Observações'],
+        formatos: ['txt', 'txt', 'txt', 'brl', 'brl', 'brl', 'brl', 'brl', 'brl', 'brl', 'brl', 'brl', 'pct', 'brl', 'pct', 'txt', 'int', 'txt'], linhas: lanc },
+      { nome: 'Contratos', cabecalho: ['Contrato', 'Cliente', 'Versões', 'Fatura orçada vigente', 'Funcionários orçados', 'Meses lançados', 'Último mês', 'Custo realizado acumulado', 'Custo orçado acumulado', 'Resultado acumulado', 'Margem acumulada'],
+        formatos: ['txt', 'txt', 'int', 'brl', 'int', 'int', 'txt', 'brl', 'brl', 'brl', 'pct'], linhas: resumo },
+    ] };
+  }
+  async function enviarNuvem() {
+    if (!nuvemAtiva()) return;
+    if (nuvem.emVoo) { nuvem.denovo = true; return; }
+    nuvem.emVoo = true; estadoNuvem('salvando');
+    try {
+      const r = await api({ acao: 'salvar', contratos, excluidos: store.get(KN.exc, {}), planilha: planilhaNuvem() });
+      if (!r.ok) throw new Error(r.erro || 'falha');
+      store.set(KN.pend, false);
+      aplicarServidor(r);
+      estadoNuvem('ok');
+    } catch (e) {
+      estadoNuvem('erro');
+      clearTimeout(nuvem.timer); nuvem.timer = setTimeout(enviarNuvem, 30000);
+    } finally {
+      nuvem.emVoo = false;
+      if (nuvem.denovo) { nuvem.denovo = false; enviarNuvem(); }
+    }
+  }
+  const porId = l => JSON.stringify(l.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))));
+  // Troca a cópia local pela do Drive; só redesenha a tela se algo mudou (não atrapalha quem está digitando)
+  function aplicarServidor(r) {
+    nuvem.empresa = r.empresa || nuvem.empresa;
+    store.set(KN.exc, r.excluidos || {});
+    const lista = r.contratos || [];
+    if (porId(lista) === porId(contratos)) { assinar(); return; }
+    contratos = lista; store.set(K.contratos, contratos); store.set(KN.dono, nuvem.chave); assinar();
+    redesenhar();
+  }
+  function redesenhar() {
+    const aba = ($('.tabs button[aria-selected="true"]') || {}).dataset;
+    if (aba && aba.tab === 'acomp') renderAcomp();
+    if (aba && aba.tab === 'contratos') renderContratos();
+    if (edicao && !contratos.find(c => c.id === edicao.contratoId)) { edicao = null; store.del(K.edicao); }
+    renderResumo();
+  }
+  async function iniciarNuvem() {
+    assinar();
+    if (!nuvem.chave || !apiUrl()) { estadoNuvem('off'); return; }
+    estadoNuvem('carregando');
+    let r;
+    try { r = await api({ acao: 'carregar' }); } catch (e) { nuvem.pronto = true; estadoNuvem('erro'); clearTimeout(nuvem.timer); nuvem.timer = setTimeout(iniciarNuvem, 30000); return; }
+    if (!r.ok) { estadoNuvem(r.erro === 'chave' ? 'chave' : 'erro'); return; }
+    nuvem.empresa = r.empresa; nuvem.pronto = true;
+    const dono = store.get(KN.dono, null);
+    if (dono !== nuvem.chave && contratos.length) {
+      // Contratos que já estavam neste navegador, de antes do link de acesso
+      const enviar = confirm(`Este navegador já tem ${contratos.length} contrato(s) salvo(s) fora do Drive.\n\nOK: enviar para a pasta de ${r.empresa} no Google Drive.\nCancelar: guardar à parte neste navegador e abrir só os contratos de ${r.empresa}.`);
+      if (!enviar) { store.set(KN.guardados, contratos); contratos = []; }
+      store.set(K.contratos, contratos); store.set(KN.dono, nuvem.chave); store.set(KN.pend, enviar);
+      contratos.forEach(c => { c.atualizadoEm = c.atualizadoEm || new Date().toISOString(); });
+    }
+    store.set(KN.dono, nuvem.chave);
+    if (store.get(KN.pend, false)) { aplicarServidorParcial(r); enviarNuvem(); }
+    else { aplicarServidor(r); estadoNuvem('ok'); }
+  }
+  // Havia alterações locais não enviadas: junta com o Drive e envia (o Apps Script resolve contrato a contrato)
+  function aplicarServidorParcial(r) {
+    const loc = {}; contratos.forEach(c => { loc[c.id] = c; });
+    const exc = store.get(KN.exc, {});
+    (r.contratos || []).forEach(c => { if (!loc[c.id] && !exc[c.id]) contratos.push(c); else if (loc[c.id] && String(c.atualizadoEm || '') > String(loc[c.id].atualizadoEm || '')) Object.assign(loc[c.id], c); });
+    store.set(K.contratos, contratos); assinar(); redesenhar();
+  }
+  function desconectar() {
+    if (store.get(KN.pend, false) && !confirm('Há alterações que ainda não chegaram ao Drive. Desconectar mesmo assim?')) return;
+    if (!confirm('Desconectar este navegador? Os contratos continuam no Google Drive; para voltar, abra de novo o link de acesso.')) return;
+    [KN.chave, KN.dono, KN.pend, KN.exc].forEach(k => store.del(k));
+    contratos = store.get(KN.guardados, []); store.del(KN.guardados); store.set(K.contratos, contratos);
+    nuvem.chave = null; nuvem.empresa = null; nuvem.pronto = false; edicao = null; store.del(K.edicao);
+    estadoNuvem('off'); assinar(); redesenhar(); toast('Navegador desconectado do Drive.');
+  }
+  function salvarPdfNuvem(doc, nome) {
+    if (!nuvemAtiva()) return;
+    try { api({ acao: 'pdf', fileName: nome, pdfBase64: doc.output('datauristring').split(',')[1] }).catch(() => {}); } catch (e) { /* ignora */ }
+  }
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-n]'); if (!b) return;
+    if (b.dataset.n === 'sair') desconectar();
+    if (b.dataset.n === 'tentar') { clearTimeout(nuvem.timer); nuvem.pronto ? enviarNuvem() : iniciarNuvem(); }
+  });
+  addEventListener('online', () => { if (nuvem.estado === 'erro') { clearTimeout(nuvem.timer); nuvem.pronto ? enviarNuvem() : iniciarNuvem(); } });
+  addEventListener('beforeunload', ev => { if (nuvemAtiva() && store.get(KN.pend, false)) { ev.preventDefault(); ev.returnValue = ''; } });
 
   // ═════════════════════════ ABAS ═════════════════════════
   function abrirAba(t) {
@@ -399,6 +543,7 @@
     const doc = window.StarqiaPDF.proposta(inp, res, lead);
     const nome = `Proposta_${nomeArquivo(inp.meta.cliente || inp.meta.servico || 'simulacao')}_${inp.meta.data || ''}.pdf`;
     doc.save(nome);
+    salvarPdfNuvem(doc, nome);
     toast('PDF gerado.');
     evento('orcamento_pdf', inp.regime);
     enviarCopia(lead, doc, nome);
@@ -746,7 +891,9 @@
     if (a === 'pdf-rel') {
       if (!window.StarqiaPDF) { toast('O gerador de PDF não carregou.'); return; }
       const D = dadosContrato(c);
-      window.StarqiaPDF.relatorio(c, D, { orcadoDoMes: m => orcadoDoMes(c, m), versaoDoMes: m => versaoDoMes(c, m) }).save(`Acompanhamento_${nomeArquivo(c.nome)}.pdf`);
+      const docR = window.StarqiaPDF.relatorio(c, D, { orcadoDoMes: m => orcadoDoMes(c, m), versaoDoMes: m => versaoDoMes(c, m) });
+      const nomeR = `Acompanhamento_${nomeArquivo(c.nome)}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      docR.save(nomeR); salvarPdfNuvem(docR, nomeR);
     }
   });
   ac.addEventListener('change', ev => {
@@ -822,8 +969,8 @@
     if (a === 'acomp') { acomp.contratoId = c.id; acomp.mes = null; abrirAba('acomp'); }
     if (a === 'editar') { inp = clone(c.versoes[c.versoes.length - 1].inp); edicao = { contratoId: c.id }; store.set(K.edicao, edicao); abrirAba('preco'); renderForm(); }
     if (a === 'renomear') { const n = prompt('Novo nome do contrato:', c.nome); if (n && n.trim()) { c.nome = n.trim().slice(0, 120); salvarContratos(); renderContratos(); } }
-    if (a === 'duplicar') { const d = clone(c); d.id = uid(); d.nome = c.nome + ' (cópia)'; d.meses = {}; contratos.push(d); salvarContratos(); renderContratos(); }
-    if (a === 'excluir') { if (confirm(`Excluir “${c.nome}” e todos os meses lançados? Exporte um backup antes, se precisar.`)) { contratos = contratos.filter(x => x !== c); salvarContratos(); if (edicao && edicao.contratoId === c.id) { edicao = null; store.del(K.edicao); } renderContratos(); } }
+    if (a === 'duplicar') { const d = clone(c); d.id = uid(); d.nome = c.nome + ' (cópia)'; d.meses = {}; d.criadoEm = new Date().toISOString(); contratos.push(d); salvarContratos(); renderContratos(); }
+    if (a === 'excluir') { if (confirm(`Excluir “${c.nome}” e todos os meses lançados? Exporte um backup antes, se precisar.`)) { contratos = contratos.filter(x => x !== c); registrarExclusao(c.id); salvarContratos(); if (edicao && edicao.contratoId === c.id) { edicao = null; store.del(K.edicao); } renderContratos(); } }
     if (a === 'backup') {
       const blob = new Blob([JSON.stringify({ app: 'starqia-orcamento', versao: 1, exportadoEm: new Date().toISOString(), contratos }, null, 2)], { type: 'application/json' });
       const u = URL.createObjectURL(blob); const l = document.createElement('a'); l.href = u; l.download = `starqia-contratos-${new Date().toISOString().slice(0, 10)}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
@@ -851,4 +998,5 @@
   const h = (location.hash || '').replace('#', '');
   if (['preco', 'acomp', 'contratos'].includes(h)) abrirAba(h);
   evento('visita');
+  iniciarNuvem();
 })();

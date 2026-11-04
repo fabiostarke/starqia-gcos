@@ -14,7 +14,11 @@
 <link rel="stylesheet" href="styles.css">
 <script>
 /* Mesmo webhook do site principal (index.html → GCOS_CONFIG). Recebe os leads das simulações. */
-window.GCOS_CONFIG = { leadWebhookUrl: "https://script.google.com/macros/s/AKfycbxXcBZo9Y5EctML_EzvYaxmWSops5N1Z8LeBGMUQ2c6YplApN2BYrNyd-wkg7rf4k5K/exec" };
+window.GCOS_CONFIG = {
+  leadWebhookUrl: "https://script.google.com/macros/s/AKfycbxXcBZo9Y5EctML_EzvYaxmWSops5N1Z8LeBGMUQ2c6YplApN2BYrNyd-wkg7rf4k5K/exec",
+  // Web app "STARQIA Orçamentos" (orcamento/apps-script/Codigo.gs): guarda os contratos no Google Drive
+  orcamentoApiUrl: "https://script.google.com/macros/s/AKfycbwQIsdUuPn6SmSC7F209VnHQW2T9Aar_F8YhXpJWad4NnS-hR6tRQCfin9vsHCwqZAE/exec"
+};
 </script>
 </head>
 <body>
@@ -32,6 +36,7 @@ window.GCOS_CONFIG = { leadWebhookUrl: "https://script.google.com/macros/s/AKfyc
     <a class="back" href="https://gcos.starqia.com/">← Voltar ao site</a>
   </div>
 </header>
+<div id="nuvem" class="nuvem-bar" hidden role="status" aria-live="polite"></div>
 
 <main id="app">
   <!-- ═══════════ FORMAÇÃO DE PREÇO ═══════════ -->
