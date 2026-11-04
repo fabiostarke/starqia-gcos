@@ -16,6 +16,7 @@
 
   // ───────────────────────── utilidades ─────────────────────────
   const clone = o => JSON.parse(JSON.stringify(o));
+  const n0 = v => Number(v) || 0;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   function parseNum(s) {
@@ -23,6 +24,7 @@
     s = String(s || '').trim().replace(/\s|R\$|%/g, '');
     if (!s) return 0;
     if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); // "2.000" = dois mil
     const v = parseFloat(s);
     return isFinite(v) ? v : 0;
   }
@@ -197,8 +199,18 @@
         ${campo('Seguros (% do subtotal)', 'indiretos.seguroPct', 'pct')}
         ${campo('Contribuição sindical patronal (anual)', 'indiretos.sindicatoPatronalAnual', 'money')}
         ${campo('Outros custos indiretos (mensal)', 'indiretos.outrosMensal', 'money')}
-        ${campo('Lucro (% s/ subtotal + custos indiretos)', 'indiretos.lucroPct', 'pct')}
-      </div>`),
+      </div>
+      <h3 class="sub-h">Margem de lucro</h3>
+      <div class="seg" role="group" aria-label="Como definir a margem de lucro">
+        <button type="button" data-lucromodo="pct" aria-pressed="${inp.indiretos.lucroModo !== 'fatura'}">Margem de lucro (%)</button>
+        <button type="button" data-lucromodo="fatura" aria-pressed="${inp.indiretos.lucroModo === 'fatura'}">Valor da fatura atual</button>
+      </div>
+      ${inp.indiretos.lucroModo === 'fatura' ? `
+        <div class="fields">${campo('Valor da fatura atual (mensal)', 'indiretos.faturaAtual', 'money')}</div>
+        <p class="hint" data-lucro-calc></p>
+        <p class="note">Informe quanto você cobra hoje do cliente. O sistema desconta os tributos e os custos e mostra a margem de lucro que sobra.</p>` : `
+        <div class="fields">${campo('Margem de lucro (% s/ subtotal + custos indiretos)', 'indiretos.lucroPct', 'pct')}</div>
+        <p class="hint" data-lucro-calc></p>`}`),
       sec('RF', 'Retenções na fonte', 'ret', `<div class="fields">
         ${campo('INSS retido (cessão de mão de obra)', 'retencoes.inssPct', 'pct')}${campo('ISS retido', 'retencoes.issPct', 'pct')}
         ${campo('IRRF', 'retencoes.irPct', 'pct')}${campo('CSRF (PIS/COFINS/CSLL)', 'retencoes.csrfPct', 'pct')}
@@ -223,6 +235,10 @@
     const encT = $('[data-enc-tbl]', f);
     if (encT) encT.innerHTML = Object.keys(res.encargos).map(k => `<tr><td>${k} ${esc(res.encargos[k].desc)}</td><td class="num">${pct(res.encargos[k].pct)}</td><td class="num">${fmt(res.encargos[k].valor)}</td></tr>`).join('')
       + `<tr><td><b>Total do Módulo 4</b></td><td class="num"><b>${pct(res.pctEncargos)}</b></td><td class="num"><b>${fmt(res.modulos.m4)}</b></td></tr>`;
+    const lc = $('[data-lucro-calc]', f);
+    if (lc) lc.innerHTML = res.lucroModo === 'fatura'
+      ? `<b class="${res.lucro < 0 ? 'up' : 'down'}">${res.lucro < 0 ? 'Prejuízo' : 'Lucro'} de ${fmt(Math.abs(res.lucro))} por mês</b>: margem de ${pct(res.lucroPct)} sobre subtotal + custos indiretos (${pct(res.margemPct)} da fatura).`
+      : (inp.indiretos.lucroModo === 'fatura' ? 'Informe o valor da fatura para calcular a margem.' : `Lucro de ${fmt(res.lucro)} por mês, ${pct(res.margemPct)} da fatura.`);
     const e41 = $('[data-encpct="4.1"]', f); if (e41) e41.textContent = '· ' + pct(res.encargos['4.1'].pct);
     const q = $('[data-quadro]', f); if (q) q.innerHTML = quadroHTML(res);
     renderResumo();
@@ -296,6 +312,12 @@
   form.addEventListener('click', ev => {
     const b = ev.target.closest('button'); if (!b) return;
     if (b.dataset.regime) { mudarRegime(b.dataset.regime); return; }
+    if (b.dataset.lucromodo) {
+      const ind = inp.indiretos;
+      if (b.dataset.lucromodo === 'fatura' && ind.lucroModo !== 'fatura' && !n0(ind.faturaAtual)) ind.faturaAtual = E.r2(res.fatura);
+      if (b.dataset.lucromodo === 'pct' && ind.lucroModo === 'fatura' && res.lucroModo === 'fatura') ind.lucroPct = res.lucroPct;
+      ind.lucroModo = b.dataset.lucromodo; renderForm(); return;
+    }
     if (b.dataset.add) {
       const lista = getPath(inp, b.dataset.add);
       if (b.dataset.add === 'cargos') lista.push({ desc: 'Novo cargo', qtd: 1, salario: 0, noturno: false, horasNot: 105, dsrNot: 3.5, periculosidadePct: 0, insalubridadePct: 0, gratificacao: 0 });
@@ -502,6 +524,7 @@
         <div class="kpi-card"><span>Fatura orçada vigente (${mesLabel(acomp.mes)})</span><b>${fmt(orcAtual.fatura)}</b><small>Custo orçado ${fmt(custoOrcGrupos(orcAtual))} · ${c.versoes.length} versão(ões)</small></div>
         <div class="kpi-card"><span>Custo acumulado realizado x orçado</span><b class="${desvAc > c.tolerancia ? 'up' : desvAc > 0 ? '' : 'down'}">${desvAc === null ? '–' : (desvAc > 0 ? '+' : '') + pct(desvAc, 1)}</b><small>${fmt(D.acum.real)} realizado / ${fmt(D.acum.orc)} orçado</small></div>
         <div class="kpi-card"><span>Margem realizada acumulada</span><b>${margReal === null ? '–' : pct(margReal, 1)}</b><small>Orçada: ${pct(margOrc, 1)} (antes de tributos sobre lucro)</small></div>
+        <div class="kpi-card"><span>Resultado do último mês</span><b class="${ultimo && ultimo.resultado.valor !== null ? (ultimo.resultado.valor < 0 ? 'prej' : 'lucro') : ''}">${ultimo && ultimo.resultado.valor !== null ? fmt(ultimo.resultado.valor) : '–'}</b><small>${ultimo && ultimo.resultado.valor !== null ? mesLabel(ultimo.mes) + ' · margem ' + pct(ultimo.margem.valor, 1) + (ultimo.resultado.delta !== null ? ' · ' + (ultimo.resultado.delta >= 0 ? '+' : '') + fmt(ultimo.resultado.delta) + ' x mês anterior' : '') : 'informe faturamento e custos'}</small></div>
         <div class="kpi-card"><span>Custo do último mês x anterior</span><b class="${dCls(ultimo && ultimo.custoTotal.deltaPct, true)}">${ultimo && ultimo.custoTotal.deltaPct !== null ? sinal(ultimo.custoTotal.deltaPct) : '–'}</b><small>${ultimo ? mesLabel(ultimo.mes) + ': ' + fmt(ultimo.custoTotal.valor) : 'sem lançamentos'}</small></div>
       </div>
 
@@ -514,13 +537,13 @@
 
       ${D.meses.length ? `
       <div class="panel">
-        <div class="panel-head"><h2>Variação mês a mês dos custos realizados</h2>
+        <div class="panel-head"><h2>Variação mês a mês: custos e resultado do contrato</h2>
           <div class="seg" role="group" aria-label="Exibição" style="margin:0">
             <button type="button" data-a="modo" data-m="pct" aria-pressed="${acomp.modo === 'pct'}">Δ %</button>
             <button type="button" data-a="modo" data-m="rs" aria-pressed="${acomp.modo === 'rs'}">Δ R$</button>
             <button type="button" data-a="modo" data-m="val" aria-pressed="${acomp.modo === 'val'}">Valores</button>
           </div></div>
-        <p class="muted">Compara cada custo com o mês anterior lançado. Vermelho: o custo subiu acima da tolerância; verde: caiu. O custo por funcionário separa o efeito do número de pessoas do efeito do preço.</p>
+        <p class="muted">Compara cada custo com o mês anterior lançado. Vermelho: o custo subiu acima da tolerância; verde: caiu. O custo por funcionário separa o efeito do número de pessoas do efeito do preço. O resultado é o faturamento menos os custos realizados lançados: verde é lucro, vermelho é prejuízo.</p>
         <div class="tbl-wrap">${tabelaVariacao(D, c)}</div>
       </div>
 
@@ -532,26 +555,74 @@
 
       ${detalheMes(c, D)}` : ''}`;
     desenharGrafico(D);
+    atualizarLancamento();
   }
   const custoOrcGrupos = r => E.GRUPOS.reduce((a, g) => a + r.grupos[g.k], 0);
   const sinal = v => (v > 0 ? '+' : '') + pct(v, 1);
   function dCls(v, custo) { if (v === null || v === undefined || Math.abs(v) < 0.0005) return 'flat'; return (v > 0) === custo ? 'up' : 'down'; }
 
+  // cfg salvo no mês; meses antigos (sem cfg) foram lançados com valores digitados
+  function cfgDoReg(reg, orc) { return reg ? (reg.cfg || { encargos: 'valor', indiretos: 'valor', tributos: 'valor' }) : E.CFG_PADRAO(orc); }
   function formLancamento(c, orc) {
-    const reg = c.meses[acomp.mes] || { real: {}, headcount: orc.headcount, obs: '' };
-    const val = k => reg.real[k] === undefined || reg.real[k] === null || reg.real[k] === '' ? '' : numBR(reg.real[k], 2);
-    const campos = E.GRUPOS.map(g => `<label title="${esc(g.dica)}">${esc(g.label)}<span class="prefix"><input inputmode="decimal" data-real="${g.k}" value="${val(g.k)}" placeholder="${numBR(orc.grupos[g.k], 2)}"></span><span class="orc">Orçado: ${fmt(orc.grupos[g.k])}</span></label>`).join('');
+    const reg = c.meses[acomp.mes];
+    const cfg = Object.assign(E.CFG_PADRAO(orc), cfgDoReg(reg, orc));
+    const ent = reg ? (reg.entrada || reg.real || {}) : {};
+    const real = reg ? reg.real || {} : {};
+    const ro = k => (k === 'encargos' && cfg.encargos === 'auto') || (k === 'indiretos' && cfg.indiretos === 'pct') || (k === 'tributos' && cfg.tributos === 'pct');
+    const val = k => { const v = ro(k) ? real[k] : ent[k]; return v === undefined || v === null || v === '' ? '' : numBR(v, 2); };
+    const insumosV = versaoDoMes(c, acomp.mes).inp.insumos.map(x => x.desc).filter(Boolean);
+    const dica = g => g.k === 'insumos' && insumosV.length ? `Valores referentes a: ${insumosV.join(', ')}.` : g.dica;
+    const modo = {
+      encargos: `<select data-cfg="encargos" aria-label="Como calcular os encargos"><option value="auto"${cfg.encargos === 'auto' ? ' selected' : ''}>Automático: ${pct(orc.pctEncargos)} da remuneração</option><option value="valor"${cfg.encargos !== 'auto' ? ' selected' : ''}>Informar o valor real</option></select>`,
+      indiretos: `<div class="lanc-modo"><select data-cfg="indiretos" aria-label="Como informar os custos indiretos"><option value="pct"${cfg.indiretos === 'pct' ? ' selected' : ''}>% sobre os custos diretos do mês</option><option value="valor"${cfg.indiretos !== 'pct' ? ' selected' : ''}>Informar o valor em R$</option></select>
+        <span class="suffix" data-suf="%" data-cfgbox="indiretos"${cfg.indiretos === 'pct' ? '' : ' hidden'}><input inputmode="decimal" data-cfgpct="indiretosPct" value="${numBR(cfg.indiretosPct * 100, 4)}" aria-label="Percentual de custos indiretos"></span></div>`,
+      tributos: `<div class="lanc-modo"><select data-cfg="tributos" aria-label="Como informar os tributos"><option value="pct"${cfg.tributos === 'pct' ? ' selected' : ''}>Alíquota sobre o faturamento</option><option value="valor"${cfg.tributos !== 'pct' ? ' selected' : ''}>Informar o valor da guia</option></select>
+        <span class="suffix" data-suf="%" data-cfgbox="tributos"${cfg.tributos === 'pct' ? '' : ' hidden'}><input inputmode="decimal" data-cfgpct="tributosPct" value="${numBR(cfg.tributosPct * 100, 4)}" aria-label="Alíquota de tributos"></span></div>`,
+    };
+    const campoG = g => `<div class="lanc-item"><b>${esc(g.label)}</b><small class="dica">${esc(dica(g))}</small>${modo[g.k] || ''}
+        <span class="prefix"><input inputmode="decimal" data-ent="${g.k}" value="${val(g.k)}" placeholder="${numBR(orc.grupos[g.k], 2)}"${ro(g.k) ? ' readonly tabindex="-1"' : ''} aria-label="${esc(g.label)}"></span><span class="orc">Orçado: ${fmt(orc.grupos[g.k])}</span></div>`;
     return `<div class="lanc-grid">
-        ${campos}
-        <label>Faturamento emitido<span class="prefix"><input inputmode="decimal" data-real="faturamento" value="${val('faturamento')}" placeholder="${numBR(orc.fatura, 2)}"></span><span class="orc">Orçado: ${fmt(orc.fatura)}</span></label>
-        <label>Funcionários no mês<input inputmode="numeric" data-hc value="${reg.headcount != null ? reg.headcount : ''}"><span class="orc">Orçado: ${numBR(orc.headcount, 0)}</span></label>
+        <div class="lanc-item"><b>Faturamento emitido</b><small class="dica">Valor bruto da nota fiscal do mês, antes das retenções.</small><span class="prefix"><input inputmode="decimal" data-ent="faturamento" value="${val('faturamento')}" placeholder="${numBR(orc.fatura, 2)}" aria-label="Faturamento emitido"></span><span class="orc">Orçado: ${fmt(orc.fatura)}</span></div>
+        ${E.GRUPOS.map(campoG).join('')}
+        <div class="lanc-item"><b>Funcionários no mês</b><small class="dica">Pessoas que trabalharam no contrato no mês, incluindo coberturas.</small><input inputmode="numeric" data-hc value="${reg && reg.headcount != null ? reg.headcount : ''}" aria-label="Funcionários no mês"><span class="orc">Orçado: ${numBR(orc.headcount, 0)}</span></div>
       </div>
-      <label style="margin-top:12px">Observações do mês (faltas, coberturas, horas extras, reajuste)<textarea data-obs rows="2" maxlength="800">${esc(reg.obs || '')}</textarea></label>
+      <div class="lanc-res" data-lanc-res></div>
+      <label style="margin-top:12px">Observações do mês (faltas, coberturas, horas extras, reajuste)<textarea data-obs rows="2" maxlength="800">${esc(reg ? reg.obs || '' : '')}</textarea></label>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
         <button class="btn primary" data-a="salvar-mes">Salvar ${mesLabel(acomp.mes)}</button>
         <button class="btn ghost-dark" data-a="copiar-orc">Preencher vazios com o orçado</button>
-        ${c.meses[acomp.mes] ? '<button class="btn danger" data-a="excluir-mes">Excluir competência</button>' : ''}
+        ${reg ? '<button class="btn danger" data-a="excluir-mes">Excluir competência</button>' : ''}
       </div>`;
+  }
+  // Lê o formulário de lançamento e monta os valores realizados (com os campos automáticos)
+  function lerLancamento(orc) {
+    const entrada = {}, cfg = {};
+    $$('[data-cfg]', ac).forEach(el => { cfg[el.dataset.cfg] = el.value; });
+    $$('[data-cfgpct]', ac).forEach(i => { cfg[i.dataset.cfgpct] = parseNum(i.value) / 100; });
+    $$('[data-ent]', ac).forEach(i => { if (!i.readOnly && i.value.trim() !== '') entrada[i.dataset.ent] = parseNum(i.value); });
+    return { entrada, cfg, real: E.resolverRealizado(entrada, cfg, orc) };
+  }
+  function atualizarLancamento() {
+    const c = contratos.find(x => x.id === acomp.contratoId); if (!c || !$('[data-lanc-res]', ac)) return;
+    const orc = orcadoDoMes(c, acomp.mes);
+    ['encargos', 'indiretos', 'tributos'].forEach(k => {
+      const sel = $(`[data-cfg="${k}"]`, ac), i = $(`[data-ent="${k}"]`, ac), box = $(`[data-cfgbox="${k}"]`, ac);
+      const auto = sel.value === 'auto' || sel.value === 'pct';
+      if (i.readOnly && !auto) i.value = '';
+      i.readOnly = auto; i.tabIndex = auto ? -1 : 0;
+      if (box) box.hidden = !auto;
+    });
+    const L = lerLancamento(orc);
+    ['encargos', 'indiretos', 'tributos'].forEach(k => { const i = $(`[data-ent="${k}"]`, ac); if (i.readOnly) i.value = L.real[k] != null ? numBR(L.real[k], 2) : ''; });
+    const custos = E.GRUPOS.filter(g => L.real[g.k] != null);
+    const custo = custos.reduce((a, g) => a + L.real[g.k], 0);
+    const box = $('[data-lanc-res]', ac);
+    if (!custos.length) { box.innerHTML = ''; return; }
+    const fat = L.real.faturamento;
+    const resv = fat != null ? fat - custo : null;
+    box.innerHTML = `<span>Custo realizado: <b>${fmt(custo)}</b>${custos.length < E.GRUPOS.length ? ` <small>(${custos.length} de ${E.GRUPOS.length} grupos)</small>` : ''}</span>`
+      + (resv === null ? '<span>Informe o faturamento para ver o resultado.</span>'
+        : `<span>Resultado do mês: <b class="${resv < 0 ? 'prej' : 'lucro'}">${resv < 0 ? 'prejuízo de ' : 'lucro de '}${fmt(Math.abs(resv))}</b> · margem ${fat ? pct(resv / fat, 1) : '–'}</span>`);
   }
 
   function tabelaVariacao(D, c) {
@@ -571,7 +642,20 @@
       const txt = acomp.modo === 'pct' ? (d.deltaPct === null ? '–' : sinal(d.deltaPct)) : ((d.delta > 0 ? '+' : '') + fmt(d.delta));
       return `<td class="${cls} ${heat}" title="${fmt(d.anterior)} → ${fmt(d.valor)}">${txt}</td>`;
     };
+    // Resultado (lucro ou prejuízo): mostra sempre o valor, com a variação embaixo
+    const celRes = d => {
+      if (!d || d.valor === null) return '<td class="flat">–</td>';
+      const var_ = acomp.modo === 'val' || d.delta === null ? '' : `<small class="${d.delta >= 0 ? 'down' : 'up'}">${acomp.modo === 'pct' && d.deltaPct !== null ? sinal(d.deltaPct) : (d.delta > 0 ? '+' : '') + fmt(d.delta)}</small>`;
+      return `<td class="${d.valor < 0 ? 'prej' : 'lucro'}" title="${d.anterior === null ? '' : fmt(d.anterior) + ' → '}${fmt(d.valor)}"><b>${fmt(d.valor)}</b>${var_}</td>`;
+    };
+    const celMarg = d => {
+      if (!d || d.valor === null) return '<td class="flat">–</td>';
+      const pp = d.delta === null || acomp.modo === 'val' ? '' : `<small class="${d.delta >= 0 ? 'down' : 'up'}">${d.delta > 0 ? '+' : ''}${numBR(d.delta * 100, 1)} p.p.</small>`;
+      return `<td class="${d.valor < 0 ? 'prej' : 'lucro'}">${pct(d.valor, 1)}${pp}</td>`;
+    };
     const body = linhas.map(l => `<tr class="${l.tot ? 'tot' : ''}"><td>${esc(l.label)}</td>${V.map(x => cell(l.get(x), l.custo)).join('')}</tr>`).join('')
+      + `<tr class="res"><td>Resultado do contrato (lucro ou prejuízo)</td>${V.map(x => celRes(x.resultado)).join('')}</tr>`
+      + `<tr class="res-m"><td>Margem do resultado (% do faturamento)</td>${V.map(x => celMarg(x.margem)).join('')}</tr>`
       + `<tr><td>Funcionários</td>${V.map(x => `<td>${x.headcount == null ? '–' : numBR(x.headcount, 0)}</td>`).join('')}</tr>`;
     return `<table class="rep">${head}${body}</table>`;
   }
@@ -648,8 +732,9 @@
     if (a === 'salvar-mes') salvarMes(c);
     if (a === 'copiar-orc') {
       const orc = orcadoDoMes(c, acomp.mes);
-      $$('[data-real]', ac).forEach(i => { if (!i.value) i.value = numBR(i.dataset.real === 'faturamento' ? orc.fatura : orc.grupos[i.dataset.real], 2); });
+      $$('[data-ent]', ac).forEach(i => { if (!i.value && !i.readOnly) i.value = numBR(i.dataset.ent === 'faturamento' ? orc.fatura : orc.grupos[i.dataset.ent], 2); });
       const hc = $('[data-hc]', ac); if (!hc.value) hc.value = orc.headcount;
+      atualizarLancamento();
     }
     if (a === 'excluir-mes') { if (confirm(`Excluir os lançamentos de ${mesLabel(acomp.mes)}?`)) { delete c.meses[acomp.mes]; salvarContratos(); renderAcomp(); } }
     if (a === 'nova-versao') {
@@ -669,16 +754,18 @@
     const c = contratos.find(x => x.id === acomp.contratoId);
     if (a === 'contrato') { acomp.contratoId = el.value; acomp.mes = null; renderAcomp(); }
     if (a === 'mes' && el.value) { acomp.mes = el.value; renderAcomp(); }
+    if (el.dataset.cfg) atualizarLancamento();
+    if ((el.dataset.ent || el.dataset.cfgpct) && !el.readOnly && el.value.trim() !== '') el.value = numBR(parseNum(el.value), el.dataset.cfgpct ? 4 : 2);
     if (a === 'tol') { c.tolerancia = Math.max(0, parseNum(el.value) / 100); salvarContratos(); renderAcomp(); }
   });
 
+  ac.addEventListener('input', ev => { if (ev.target.dataset.ent || ev.target.dataset.cfgpct) atualizarLancamento(); });
+
   function salvarMes(c) {
-    const real = {};
-    let algum = false;
-    $$('[data-real]', ac).forEach(i => { if (i.value.trim() !== '') { real[i.dataset.real] = parseNum(i.value); algum = true; } });
-    if (!algum) { toast('Informe ao menos um valor realizado.'); return; }
+    const L = lerLancamento(orcadoDoMes(c, acomp.mes));
+    if (!Object.keys(L.real).length) { toast('Informe ao menos um valor realizado.'); return; }
     const hcv = $('[data-hc]', ac).value.trim();
-    c.meses[acomp.mes] = { real, headcount: hcv === '' ? null : parseNum(hcv), obs: $('[data-obs]', ac).value.trim(), salvoEm: new Date().toISOString() };
+    c.meses[acomp.mes] = { real: L.real, entrada: L.entrada, cfg: L.cfg, headcount: hcv === '' ? null : parseNum(hcv), obs: $('[data-obs]', ac).value.trim(), salvoEm: new Date().toISOString() };
     salvarContratos();
     toast(`${mesLabel(acomp.mes)} salvo.`);
     evento('orcamento_mes_lancado');
@@ -696,10 +783,12 @@
     const c = { id: uid(), nome: 'Condomínio Exemplo – Portaria 12x36', cliente: 'Condomínio Exemplo', criadoEm: new Date().toISOString(), tolerancia: 0.05,
       versoes: [{ id: uid(), vigencia: '2026-05', inp: base, salvoEm: new Date().toISOString() }], meses: {} };
     ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].forEach((m, i) => {
-      const real = {};
-      Object.keys(fat).forEach(k => { real[k] = E.r2(r.grupos[k] * fat[k][i]); });
-      real.faturamento = E.r2(r.fatura);
-      c.meses[m] = { real, headcount: i === 4 ? 5 : 4, obs: i === 4 ? 'Cobertura de férias com folguista extra e horas extras no feriado.' : '' };
+      const entrada = { faturamento: E.r2(r.fatura) };
+      ['remuneracao', 'beneficios', 'insumos'].forEach(k => { entrada[k] = E.r2(r.grupos[k] * fat[k][i]); });
+      const cfg = E.CFG_PADRAO(r);
+      if (i === 4) { cfg.indiretos = 'valor'; entrada.indiretos = E.r2(r.grupos.indiretos * 1.1); }
+      const real = E.resolverRealizado(entrada, cfg, r);
+      c.meses[m] = { real, entrada, cfg, headcount: i === 4 ? 5 : 4, obs: i === 4 ? 'Cobertura de férias com folguista extra e horas extras no feriado.' : '' };
     });
     contratos.push(c); salvarContratos();
     acomp.contratoId = c.id; acomp.mes = null; // abre no próximo mês sem lançamento
