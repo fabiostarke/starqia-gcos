@@ -197,3 +197,13 @@ table.rep tr.sel td{background:#eaf7f0}
 table.rep tr.res td{border-top:2px solid var(--ink-950);background:#fafbfa}
 table.rep tr.res td:first-child,table.rep tr.res-m td:first-child{font-weight:800;color:var(--ink-950)}
 table.rep tr.res small,table.rep tr.res-m small{display:block;font-size:11px;font-weight:600}
+
+/* Barra de sincronização com o Google Drive */
+.nuvem-bar{background:#eef7f2;border-bottom:1px solid #d3ebde;font-size:13px;color:var(--ink-900)}
+.nuvem-bar .wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:7px;padding-bottom:7px}
+.nuvem-bar .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
+.nuvem-bar.salvando .dot,.nuvem-bar.carregando .dot,.nuvem-bar.pend .dot{background:var(--warn)}
+.nuvem-bar.erro,.nuvem-bar.chave{background:#fdf3f3;border-color:#f3d6d6}
+.nuvem-bar.erro .dot,.nuvem-bar.chave .dot{background:var(--bad)}
+.nuvem-bar button{margin-left:auto;border:0;background:none;color:var(--steel-600);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;padding:2px 4px}
+.nuvem-bar button+button{margin-left:0}
